@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { castVote, getRunByRoomId, saveRunState } from "@/lib/data/store";
 import { applyVoteResolution } from "@/lib/sim/engine";
+import { parseRequestBody } from "@/lib/api/validation";
+import { VoteCastSchema } from "@/lib/api/schemas";
 
 async function findRunId(body: { runId?: string; roomId?: string }) {
   if (body.runId) {
@@ -15,16 +17,12 @@ async function findRunId(body: { runId?: string; roomId?: string }) {
 }
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json().catch(() => ({}))) as {
-    runId?: string;
-    roomId?: string;
-    optionId?: string;
-    voterKey?: string;
-  };
-
-  if (!body.optionId || !body.voterKey) {
-    return NextResponse.json({ error: "optionId and voterKey required" }, { status: 400 });
+  const parsed = await parseRequestBody(request, VoteCastSchema);
+  if (!parsed.ok) {
+    return parsed.response;
   }
+
+  const body = parsed.data;
 
   const runId = await findRunId(body);
   if (!runId) {

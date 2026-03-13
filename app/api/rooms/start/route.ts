@@ -1,15 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRoom, startRun } from "@/lib/data/store";
+import { parseRequestBody } from "@/lib/api/validation";
+import { StartRunRequestSchema } from "@/lib/api/schemas";
+import { isDemoMode } from "@/lib/env";
+import { assertHostForRoom } from "@/lib/authz/host";
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json().catch(() => ({}))) as { roomId?: string };
-  if (!body.roomId) {
-    return NextResponse.json({ error: "roomId required" }, { status: 400 });
+  const parsed = await parseRequestBody(request, StartRunRequestSchema);
+  if (!parsed.ok) {
+    return parsed.response;
   }
 
-  const room = await getRoom(body.roomId);
+  const { roomId } = parsed.data;
+  const room = await getRoom(roomId);
   if (!room) {
     return NextResponse.json({ error: "Room not found" }, { status: 404 });
+  }
+
+  if (!isDemoMode()) {
+    const hostAuth = await assertHostForRoom(room.id);
+    if (!hostAuth.ok) {
+      return hostAuth.response;
+    }
   }
 
   const run = await startRun(room.id);

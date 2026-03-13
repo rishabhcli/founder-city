@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRoom, joinRoomByInvite } from "@/lib/data/store";
+import { parseRequestBody } from "@/lib/api/validation";
+import { JoinRoomRequestSchema } from "@/lib/api/schemas";
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json().catch(() => ({}))) as {
-    inviteCode?: string;
-    roomId?: string;
-  };
+  const parsed = await parseRequestBody(request, JoinRoomRequestSchema);
+  if (!parsed.ok) {
+    return parsed.response;
+  }
 
-  const { inviteCode, roomId } = body;
+  const { inviteCode, roomId } = parsed.data;
   const room = inviteCode
     ? await joinRoomByInvite(inviteCode)
     : roomId

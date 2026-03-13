@@ -152,7 +152,7 @@ export function CitySimulationClient({ roomId, host, compact = false }: CitySimu
     await fetch("/api/runs/checkpoint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ runId: state.runId, state }),
+      body: JSON.stringify({ runId: state.runId, action: "setState", state }),
     });
   }, []);
 
