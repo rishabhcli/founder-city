@@ -1,4 +1,6 @@
 import { nanoid } from "nanoid";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join as joinPath } from "node:path";
 
 import { isSupabaseConfigured } from "@/lib/env";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -111,6 +113,124 @@ const memoryState: {
   runVotes: new Map(),
 };
 
+const FALLBACK_DIR = joinPath(process.cwd(), ".founder-city-state");
+const FALLBACK_FILE = joinPath(FALLBACK_DIR, "store.json");
+
+type LocalStoreDump = {
+  rooms: RoomRecord[];
+  runs: CityState[];
+  activeRunByRoom: Array<{ roomId: string; runId: string }>;
+  roomByInvite: Array<{ inviteCode: string; roomId: string }>;
+  runRecords: RunRecord[];
+  checkpoints: CheckpointRecord[];
+  runVotes: Array<{ runId: string; votes: Array<{ voterKey: string; optionId: string }> }>;
+};
+
+
+function normalizeInvite(inviteCode: string) {
+  return inviteCode.trim().toUpperCase();
+}
+
+function toSerializableState(): LocalStoreDump {
+  return {
+    rooms: [...memoryState.rooms.values()],
+    runs: [...memoryState.runs.values()],
+    activeRunByRoom: [...memoryState.activeRunByRoom.entries()].map(([roomId, runId]) => ({
+      roomId,
+      runId,
+    })),
+    roomByInvite: [...memoryState.roomByInvite.entries()].map(([inviteCode, roomId]) => ({
+      inviteCode,
+      roomId,
+    })),
+    runRecords: [...memoryState.runRecords.values()],
+    checkpoints: [...memoryState.checkpoints.values()].flatMap((entries) => entries),
+    runVotes: [...memoryState.runVotes.entries()].map(([runId, votes]) => ({
+      runId,
+      votes: [...votes.entries()].map(([voterKey, optionId]) => ({
+        voterKey,
+        optionId,
+      })),
+    })),
+  };
+}
+
+async function persistFallbackStore() {
+  await mkdir(FALLBACK_DIR, { recursive: true });
+  const payload = JSON.stringify(toSerializableState(), null, 2);
+  await writeFile(FALLBACK_FILE, payload, "utf8");
+}
+
+async function ensureFallbackStoreHydrated() {
+  try {
+    const raw = await readFile(FALLBACK_FILE, "utf8");
+    const parsed = JSON.parse(raw) as LocalStoreDump;
+    memoryState.rooms = new Map(parsed.rooms.map((room) => [room.id, room]));
+    memoryState.runs = new Map(parsed.runs.map((run) => [run.runId, run]));
+    memoryState.activeRunByRoom = new Map(
+      parsed.activeRunByRoom.map(({ roomId, runId }) => [roomId, runId]),
+    );
+    memoryState.roomByInvite = new Map(
+      parsed.roomByInvite.map(({ inviteCode, roomId }) => [
+        normalizeInvite(inviteCode),
+        roomId,
+      ]),
+    );
+    memoryState.runRecords = new Map(parsed.runRecords.map((record) => [record.id, record]));
+    memoryState.checkpoints = new Map(
+      parsed.checkpoints.reduce(
+        (acc: Array<[string, CheckpointRecord[]]>, checkpoint) => {
+          const runBuckets = acc.find(([runId]) => runId === checkpoint.runId);
+          if (runBuckets) {
+            runBuckets[1].push(checkpoint);
+          } else {
+            acc.push([checkpoint.runId, [checkpoint]]);
+          }
+          return acc;
+        },
+        [],
+      ),
+    );
+    memoryState.runVotes = new Map(
+      parsed.runVotes.map(({ runId, votes }) => [
+        runId,
+        new Map(votes.map((vote) => [vote.voterKey, vote.optionId])),
+      ]),
+    );
+  } catch (error) {
+    if ((error as { code?: string })?.code !== "ENOENT") {
+      console.warn("[founder-city] Failed to load fallback store file", error);
+    }
+  }
+}
+
+async function withPersistedStore<T>(operation: () => Promise<T>) {
+  await ensureFallbackStoreHydrated();
+  return operation();
+}
+
+async function withPersistedMutation<T>(
+  operation: () => Promise<T>,
+) {
+  const result = await withPersistedStore(operation);
+  try {
+    await persistFallbackStore();
+  } catch (error) {
+    console.warn("[founder-city] Failed to persist fallback store", error);
+  }
+  return result;
+}
+
+async function withMemoryStoreMutation<T>(operation: () => Promise<T>) {
+  const result = await withPersistedStore(operation);
+  try {
+    await persistFallbackStore();
+  } catch (error) {
+    console.warn("[founder-city] Failed to persist fallback store", error);
+  }
+  return result;
+}
+
 function makeInviteCode() {
   return `${INVITE_PREFIX}${nanoid(MAX_INVITE_SUFFIX_LENGTH).toUpperCase()}`;
 }
@@ -188,26 +308,28 @@ function cityFromRunRecord(row: {
 
 const memoryStore: GlobalStoreApi = {
   async createRoom({ name, hostUserId }) {
-    const roomId = nanoid();
-    let inviteCode = makeInviteCode();
-    while (memoryState.roomByInvite.has(inviteCode)) {
-      inviteCode = makeInviteCode();
-    }
+    return withMemoryStoreMutation(async () => {
+      const roomId = nanoid();
+      let inviteCode = makeInviteCode();
+      while (memoryState.roomByInvite.has(inviteCode)) {
+        inviteCode = makeInviteCode();
+      }
 
-    const room: RoomRecord = {
-      id: roomId,
-      name: name?.trim() || `Founder City ${roomId.slice(-4)}`,
-      stackTeamId: null,
-      hostUserId,
-      inviteCode,
-      status: "lobby",
-      activeRunId: null,
-      createdAt: nowIso(),
-    };
+      const room: RoomRecord = {
+        id: roomId,
+        name: name?.trim() || `Founder City ${roomId.slice(-4)}`,
+        stackTeamId: null,
+        hostUserId,
+        inviteCode,
+        status: "lobby",
+        activeRunId: null,
+        createdAt: nowIso(),
+      };
 
-    memoryState.rooms.set(roomId, room);
-    memoryState.roomByInvite.set(inviteCode, roomId);
-    return cloneCity(room);
+      memoryState.rooms.set(roomId, room);
+      memoryState.roomByInvite.set(inviteCode, roomId);
+      return cloneCity(room);
+    });
   },
 
   async getRoom(roomId) {
@@ -225,34 +347,36 @@ const memoryStore: GlobalStoreApi = {
   },
 
   async startRun(roomId) {
-    const room = await memoryStore.getRoom(roomId);
-    if (!room) {
-      return null;
-    }
+    return withMemoryStoreMutation(async () => {
+      const room = await memoryStore.getRoom(roomId);
+      if (!room) {
+        return null;
+      }
 
-    const runId = nanoid();
-    const seed = `${roomId}-${runId}`;
-    const cityState = createInitialCityState(seed, roomId, runId);
+      const runId = nanoid();
+      const seed = `${roomId}-${runId}`;
+      const cityState = createInitialCityState(seed, roomId, runId);
 
-    const runRecord: RunRecord = {
-      id: runId,
-      roomId,
-      seed,
-      status: "active",
-      startedAt: nowIso(),
-      endedAt: null,
-      finalScores: null,
-    };
+      const runRecord: RunRecord = {
+        id: runId,
+        roomId,
+        seed,
+        status: "active",
+        startedAt: nowIso(),
+        endedAt: null,
+        finalScores: null,
+      };
 
-    memoryState.runs.set(runId, cloneCity(cityState));
-    memoryState.runRecords.set(runId, runRecord);
-    memoryState.activeRunByRoom.set(roomId, runId);
+      memoryState.runs.set(runId, cloneCity(cityState));
+      memoryState.runRecords.set(runId, runRecord);
+      memoryState.activeRunByRoom.set(roomId, runId);
 
-    room.activeRunId = runId;
-    room.status = "active";
-    memoryState.rooms.set(room.id, cloneCity(room));
+      room.activeRunId = runId;
+      room.status = "active";
+      memoryState.rooms.set(room.id, cloneCity(room));
 
-    return cloneCity(cityState);
+      return cloneCity(cityState);
+    });
   },
 
   async getRunByRoomId(roomId) {
@@ -281,65 +405,71 @@ const memoryStore: GlobalStoreApi = {
   },
 
   async saveRunState(state) {
-    const runRecord = await memoryStore.getRunRecordByRunId(state.runId);
-    if (!runRecord) {
-      return;
-    }
-
-    memoryState.runs.set(state.runId, cloneCity(state));
-
-    const nextRunRecord: RunRecord = {
-      ...runRecord,
-      status: state.status === "ended" ? "ended" : "active",
-      finalScores: state.status === "ended" ? state.score : runRecord.finalScores,
-      endedAt: state.status === "ended" ? nowIso() : runRecord.endedAt,
-    };
-    memoryState.runRecords.set(state.runId, nextRunRecord);
-
-    if (state.status === "ended") {
-      const room = memoryState.rooms.get(state.roomId);
-      if (room) {
-        room.status = "ended";
-        room.activeRunId = state.runId;
-        memoryState.rooms.set(room.id, cloneCity(room));
+    return withMemoryStoreMutation(async () => {
+      const runRecord = await memoryStore.getRunRecordByRunId(state.runId);
+      if (!runRecord) {
+        return;
       }
-    }
+
+      memoryState.runs.set(state.runId, cloneCity(state));
+
+      const nextRunRecord: RunRecord = {
+        ...runRecord,
+        status: state.status === "ended" ? "ended" : "active",
+        finalScores: state.status === "ended" ? state.score : runRecord.finalScores,
+        endedAt: state.status === "ended" ? nowIso() : runRecord.endedAt,
+      };
+      memoryState.runRecords.set(state.runId, nextRunRecord);
+
+      if (state.status === "ended") {
+        const room = memoryState.rooms.get(state.roomId);
+        if (room) {
+          room.status = "ended";
+          room.activeRunId = state.runId;
+          memoryState.rooms.set(room.id, cloneCity(room));
+        }
+      }
+    });
   },
 
   async setVoteRound(round, runId) {
-    const run = await memoryStore.getRunByRunId(runId);
-    if (!run) {
-      return null;
-    }
+    return withMemoryStoreMutation(async () => {
+      const run = await memoryStore.getRunByRunId(runId);
+      if (!run) {
+        return null;
+      }
 
-    run.activeVoteRound = round;
-    run.nextVoteAt = Number.MAX_SAFE_INTEGER;
+      run.activeVoteRound = round;
+      run.nextVoteAt = Number.MAX_SAFE_INTEGER;
 
-    const roundMap = new Map<string, string>();
-    memoryState.runVotes.set(run.runId, roundMap);
+      const roundMap = new Map<string, string>();
+      memoryState.runVotes.set(run.runId, roundMap);
 
-    memoryState.runs.set(run.runId, run);
-    return cloneCity(run);
+      memoryState.runs.set(run.runId, run);
+      return cloneCity(run);
+    });
   },
 
   async castVote({ runId, optionId, voterKey }) {
-    const run = await memoryStore.getRunByRunId(runId);
-    if (!run?.activeVoteRound) {
-      return null;
-    }
+    return withMemoryStoreMutation(async () => {
+      const run = await memoryStore.getRunByRunId(runId);
+      if (!run?.activeVoteRound) {
+        return null;
+      }
 
-    const roundMap = memoryState.runVotes.get(run.runId) ?? new Map<string, string>();
-    roundMap.set(voterKey, optionId);
-    memoryState.runVotes.set(run.runId, roundMap);
+      const roundMap = memoryState.runVotes.get(run.runId) ?? new Map<string, string>();
+      roundMap.set(voterKey, optionId);
+      memoryState.runVotes.set(run.runId, roundMap);
 
-    const tallies: Record<string, number> = {};
-    for (const vote of roundMap.values()) {
-      tallies[vote] = (tallies[vote] ?? 0) + 1;
-    }
-    run.activeVoteRound.tallies = tallies;
-    memoryState.runs.set(run.runId, run);
+      const tallies: Record<string, number> = {};
+      for (const vote of roundMap.values()) {
+        tallies[vote] = (tallies[vote] ?? 0) + 1;
+      }
+      run.activeVoteRound.tallies = tallies;
+      memoryState.runs.set(run.runId, run);
 
-    return cloneCity(run);
+      return cloneCity(run);
+    });
   },
 
   async listVotes(runId) {
@@ -360,30 +490,46 @@ const memoryStore: GlobalStoreApi = {
   },
 
   async setAudienceCount(runId, audienceCount) {
-    const run = await memoryStore.getRunByRunId(runId);
-    if (!run) {
-      return;
-    }
+    return withMemoryStoreMutation(async () => {
+      const run = await memoryStore.getRunByRunId(runId);
+      if (!run) {
+        return;
+      }
 
-    run.audienceCount = Math.max(0, audienceCount);
-    memoryState.runs.set(run.runId, run);
+      run.audienceCount = Math.max(0, audienceCount);
+      memoryState.runs.set(run.runId, run);
+    });
   },
 
   async setRunCheckpoint(state) {
-    const checkpoints = memoryState.checkpoints.get(state.runId) ?? [];
-    checkpoints.push({
-      runId: state.runId,
-      tick: state.tick,
-      state: cloneCity(state),
-      createdAt: nowIso(),
+    return withMemoryStoreMutation(async () => {
+      const runRecord = await memoryStore.getRunRecordByRunId(state.runId);
+      if (!runRecord) {
+        return;
+      }
+
+      memoryState.runs.set(state.runId, cloneCity(state));
+      memoryState.runRecords.set(state.runId, {
+        ...runRecord,
+        status: state.status === "ended" ? "ended" : "active",
+        finalScores: state.status === "ended" ? state.score : runRecord.finalScores,
+        endedAt: state.status === "ended" ? nowIso() : runRecord.endedAt,
+      });
+
+      const checkpoints = memoryState.checkpoints.get(state.runId) ?? [];
+      checkpoints.push({
+        runId: state.runId,
+        tick: state.tick,
+        state: cloneCity(state),
+        createdAt: nowIso(),
+      });
+
+      if (checkpoints.length > 6) {
+        checkpoints.shift();
+      }
+
+      memoryState.checkpoints.set(state.runId, checkpoints);
     });
-
-    if (checkpoints.length > 6) {
-      checkpoints.shift();
-    }
-
-    memoryState.checkpoints.set(state.runId, checkpoints);
-    await memoryStore.saveRunState(state);
   },
 
   async getLatestCheckpoint(runId) {
@@ -934,51 +1080,215 @@ const supabaseStore: GlobalStoreApi = {
   },
 };
 
-function getBackend(): GlobalStoreApi {
-  if (isSupabaseConfigured()) {
-    return supabaseStore;
+let useSupabaseStore = isSupabaseConfigured();
+
+function isUsingSupabase() {
+  return useSupabaseStore && isSupabaseConfigured();
+}
+
+function disableSupabaseStore(reason: string) {
+  if (!useSupabaseStore) {
+    return;
   }
-  return memoryStore;
+
+  if (reason) {
+    console.warn(`[founder-city] Falling back to in-memory store: ${reason}`);
+  }
+
+  useSupabaseStore = false;
 }
 
 export async function createRoom(args: { name?: string; hostUserId: string }): Promise<RoomRecord> {
-  return getBackend().createRoom(args);
+  return withPersistedMutation(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.createRoom(args);
+    }
+
+    const room = await supabaseStore.createRoom(args);
+    const persisted = await supabaseStore.getRoom(room.id);
+
+    if (!persisted) {
+      disableSupabaseStore("Supabase room persistence failed; using fallback store");
+    }
+
+    if (!isUsingSupabase()) {
+      return room;
+    }
+
+    return room;
+  });
 }
 
 export async function getRoom(roomId: string): Promise<RoomRecord | null> {
-  return getBackend().getRoom(roomId);
+  return withPersistedStore(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.getRoom(roomId);
+    }
+
+    const room = await supabaseStore.getRoom(roomId);
+    if (room) {
+      return room;
+    }
+
+    const fallback = await memoryStore.getRoom(roomId);
+    if (fallback) {
+      disableSupabaseStore("Supabase room lookup miss with fallback store");
+      return fallback;
+    }
+
+    return null;
+  });
 }
 
 export async function joinRoomByInvite(inviteCode: string): Promise<RoomRecord | null> {
-  return getBackend().joinRoomByInvite(inviteCode);
+  return withPersistedStore(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.joinRoomByInvite(inviteCode);
+    }
+
+    const room = await supabaseStore.joinRoomByInvite(inviteCode);
+    if (room) {
+      return room;
+    }
+
+    const fallback = await memoryStore.joinRoomByInvite(inviteCode);
+    if (fallback) {
+      disableSupabaseStore("Supabase invite lookup miss with fallback store");
+      return fallback;
+    }
+
+    return null;
+  });
 }
 
 export async function startRun(roomId: string): Promise<CityState | null> {
-  return getBackend().startRun(roomId);
+  return withPersistedMutation(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.startRun(roomId);
+    }
+
+    const run = await supabaseStore.startRun(roomId);
+    if (run) {
+      return run;
+    }
+
+    const fallback = await memoryStore.startRun(roomId);
+    if (fallback) {
+      disableSupabaseStore("Supabase start run failed; using fallback store");
+      return fallback;
+    }
+
+    return null;
+  });
 }
 
 export async function getRunByRoomId(roomId: string): Promise<CityState | null> {
-  return getBackend().getRunByRoomId(roomId);
+  return withPersistedStore(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.getRunByRoomId(roomId);
+    }
+
+    const run = await supabaseStore.getRunByRoomId(roomId);
+    if (run) {
+      return run;
+    }
+
+    const fallback = await memoryStore.getRunByRoomId(roomId);
+    if (fallback) {
+      disableSupabaseStore("Supabase run lookup miss with fallback store");
+      return fallback;
+    }
+
+    return null;
+  });
 }
 
 export async function getRunByRunId(runId: string): Promise<CityState | null> {
-  return getBackend().getRunByRunId(runId);
+  return withPersistedStore(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.getRunByRunId(runId);
+    }
+
+    const run = await supabaseStore.getRunByRunId(runId);
+    if (run) {
+      return run;
+    }
+
+    const fallback = await memoryStore.getRunByRunId(runId);
+    if (fallback) {
+      disableSupabaseStore("Supabase run lookup miss with fallback store");
+      return fallback;
+    }
+
+    return null;
+  });
 }
 
 export async function getRunRecordByRunId(runId: string): Promise<RunRecord | null> {
-  return getBackend().getRunRecordByRunId(runId);
+  return withPersistedStore(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.getRunRecordByRunId(runId);
+    }
+
+    const record = await supabaseStore.getRunRecordByRunId(runId);
+    if (record) {
+      return record;
+    }
+
+    const fallback = await memoryStore.getRunRecordByRunId(runId);
+    if (fallback) {
+      disableSupabaseStore("Supabase run record miss with fallback store");
+      return fallback;
+    }
+
+    return null;
+  });
 }
 
 export async function getRunState(roomId: string) {
-  return getBackend().getRunState(roomId);
+  return withPersistedStore(async () => {
+    const room = await getRoom(roomId);
+    const run = await getRunByRoomId(roomId);
+    return { room, run };
+  });
 }
 
 export async function saveRunState(state: CityState): Promise<void> {
-  await getBackend().saveRunState(state);
+  return withPersistedMutation(async () => {
+    if (!isUsingSupabase()) {
+      await memoryStore.saveRunState(state);
+      return;
+    }
+
+    await supabaseStore.saveRunState(state);
+
+    const persisted = await supabaseStore.getRunByRunId(state.runId);
+    if (!persisted) {
+      disableSupabaseStore("Supabase run state not persisted; using fallback store");
+      await memoryStore.saveRunState(state);
+    }
+  });
 }
 
 export async function setVoteRound(round: VoteRound, runId: string): Promise<CityState | null> {
-  return getBackend().setVoteRound(round, runId);
+  return withPersistedMutation(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.setVoteRound(round, runId);
+    }
+
+    const run = await supabaseStore.setVoteRound(round, runId);
+    if (run) {
+      return run;
+    }
+
+    const fallback = await memoryStore.setVoteRound(round, runId);
+    if (fallback) {
+      disableSupabaseStore("Supabase vote round save failed; using fallback store");
+      return fallback;
+    }
+
+    return null;
+  });
 }
 
 export async function castVote(args: {
@@ -986,27 +1296,119 @@ export async function castVote(args: {
   optionId: string;
   voterKey: string;
 }): Promise<CityState | null> {
-  return getBackend().castVote(args);
+  return withPersistedMutation(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.castVote(args);
+    }
+
+    const run = await supabaseStore.castVote(args);
+    if (run) {
+      return run;
+    }
+
+    const fallback = await memoryStore.castVote(args);
+    if (fallback) {
+      disableSupabaseStore("Supabase vote failed; using fallback vote store");
+      return fallback;
+    }
+
+    return null;
+  });
 }
 
 export async function listVotes(runId: string): Promise<VoteRecord[]> {
-  return getBackend().listVotes(runId);
+  return withPersistedStore(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.listVotes(runId);
+    }
+
+    const votes = await supabaseStore.listVotes(runId);
+    if (votes.length > 0) {
+      return votes;
+    }
+
+    const fallback = await memoryStore.listVotes(runId);
+    if (fallback.length > 0) {
+      disableSupabaseStore("Supabase votes query miss with fallback vote store");
+      return fallback;
+    }
+
+    return votes;
+  });
 }
 
 export async function setAudienceCount(runId: string, audienceCount: number): Promise<void> {
-  await getBackend().setAudienceCount(runId, audienceCount);
+  return withPersistedMutation(async () => {
+    if (!isUsingSupabase()) {
+      await memoryStore.setAudienceCount(runId, audienceCount);
+      return;
+    }
+
+    await supabaseStore.setAudienceCount(runId, audienceCount);
+    const run = await getRunByRunId(runId);
+    if (!run) {
+      disableSupabaseStore("Supabase audience tracking failed; using fallback presence");
+      await memoryStore.setAudienceCount(runId, audienceCount);
+    }
+  });
 }
 
 export async function setRunCheckpoint(state: CityState): Promise<void> {
-  await getBackend().setRunCheckpoint(state);
+  return withPersistedMutation(async () => {
+    if (!isUsingSupabase()) {
+      await memoryStore.setRunCheckpoint(state);
+      return;
+    }
+
+    await supabaseStore.setRunCheckpoint(state);
+    const checkpoint = await supabaseStore.getLatestCheckpoint(state.runId);
+    if (!checkpoint) {
+      disableSupabaseStore("Supabase checkpoints unavailable; using fallback checkpoints");
+      await memoryStore.setRunCheckpoint(state);
+    }
+  });
 }
 
 export async function getLatestCheckpoint(runId: string): Promise<CheckpointRecord | null> {
-  return getBackend().getLatestCheckpoint(runId);
+  return withPersistedStore(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.getLatestCheckpoint(runId);
+    }
+
+    const checkpoint = await supabaseStore.getLatestCheckpoint(runId);
+    if (checkpoint) {
+      return checkpoint;
+    }
+
+    const fallback = await memoryStore.getLatestCheckpoint(runId);
+    if (fallback) {
+      disableSupabaseStore("Supabase checkpoints miss with fallback checkpoint store");
+      return fallback;
+    }
+
+    return null;
+  });
 }
 
 export async function listActiveRuns(): Promise<CityState[]> {
-  return getBackend().listActiveRuns();
+  return withPersistedStore(async () => {
+    if (!isUsingSupabase()) {
+      return memoryStore.listActiveRuns();
+    }
+
+    const runs = await supabaseStore.listActiveRuns();
+    if (runs.length > 0) {
+      return runs;
+    }
+
+    const fallback = await memoryStore.listActiveRuns();
+    if (fallback.length > 0) {
+      disableSupabaseStore("Supabase active run listing miss with fallback store");
+      return fallback;
+    }
+
+    return runs;
+  });
 }
 
 export { cloneCity as toDistrictSafeRecord };
