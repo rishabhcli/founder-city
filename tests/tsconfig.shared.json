@@ -1,0 +1,19 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": [
+    "../lib/env.ts",
+    "../lib/utils.ts",
+    "../lib/types/city.ts",
+    "../lib/sim/**/*.ts",
+    "../lib/agents/**/*.ts",
+    "./sim/**/*.ts",
+    "./agents/**/*.ts"
+  ]
+}
