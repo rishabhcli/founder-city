@@ -131,6 +131,7 @@ function formatScore(score: number) {
 export function CitySimulationClient({ roomId, host, compact = false }: CitySimulationClientProps) {
   const [city, setCity] = useState<CityState | null>(null);
   const [roomStatus, setRoomStatus] = useState<RoomStatus>("lobby");
+  const [roomLoaded, setRoomLoaded] = useState(false);
   const [selectedFounder, setSelectedFounder] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const cityRef = useRef<CityState | null>(null);
@@ -195,6 +196,7 @@ export function CitySimulationClient({ roomId, host, compact = false }: CitySimu
     let cancelled = false;
     const poll = async () => {
       const payload = await refresh();
+      setRoomLoaded(true);
       if (cancelled) {
         return;
       }
@@ -204,11 +206,12 @@ export function CitySimulationClient({ roomId, host, compact = false }: CitySimu
         return;
       }
 
-      if (!payload.run) {
-        setRoomStatus(payload.room?.status ?? "lobby");
-        setMessage(payload.error ?? "No active run yet. Start a new run when ready.");
-        return;
-      }
+        if (!payload.run) {
+          setRoomStatus(payload.room?.status ?? "lobby");
+          setMessage(payload.error ?? "No active run yet. Start a new run when ready.");
+          setCity(null);
+          return;
+        }
 
       setCity(payload.run);
       setRoomStatus(payload.run.status === "ended" ? "ended" : payload.room?.status ?? "active");
@@ -484,7 +487,31 @@ export function CitySimulationClient({ roomId, host, compact = false }: CitySimu
   }, [host, notifyAudienceCount, persistState, resolveVoteFromHost]);
 
   if (!city) {
-    return <p className="text-zinc-200">Loading city state…</p>;
+    return (
+      <div className="grid gap-3 rounded-2xl border border-zinc-700/70 bg-zinc-950/65 p-4">
+        <div className="rounded-xl bg-black/40 p-3">
+          <h1 className="text-xl font-black text-cyan-200">Founder City Session</h1>
+          <p className="mt-1 text-sm text-zinc-300">
+            Room {roomId}
+            <span className="ml-2 rounded-full border border-zinc-500 px-2 py-0.5 text-[10px] uppercase">
+              {roomStatus}
+            </span>
+          </p>
+          {message ? <p className="mt-2 rounded-md bg-zinc-900/70 p-2 text-sm text-zinc-200">{message}</p> : null}
+        </div>
+
+        {host && roomStatus === "lobby" ? (
+          <button
+            onClick={startRun}
+            className="w-full rounded-md bg-fuchsia-500 px-3 py-2 font-semibold text-zinc-950 hover:bg-fuchsia-400"
+          >
+            Start Run
+          </button>
+        ) : null}
+
+        {!roomLoaded ? <p className="text-zinc-300">Loading city state…</p> : null}
+      </div>
+    );
   }
 
   const voteProgressMs = city.activeVoteRound
