@@ -133,11 +133,11 @@ function StartupBadge({
       )}
       style={{ left, top }}
     >
-      <div
-        className={cn(
-          "rounded-full border border-white/14 bg-slate-950/88 p-1.5 shadow-[0_0_42px_rgba(15,23,42,0.55)] backdrop-blur",
-          compact ? "h-8 w-8" : "h-10 w-10",
-        )}
+        <div
+          className={cn(
+            "rounded-full border border-white/14 bg-slate-950/88 p-1.5 shadow-[0_0_42px_rgba(15,23,42,0.55)] backdrop-blur",
+            compact ? "h-8 w-8" : "h-10 w-10",
+          )}
         style={{ boxShadow: `0 0 28px ${glow}` }}
       >
         <div
@@ -146,7 +146,7 @@ function StartupBadge({
         >
           {shouldRenderLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoDataUrl} alt="" className="h-full w-full object-cover" />
+            <img src={logoDataUrl ?? undefined} alt="" className="h-full w-full object-cover" />
           ) : (
             <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white">{monogram}</span>
           )}

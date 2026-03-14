@@ -352,7 +352,7 @@ export function PlayerStartupControls({
               >
                 {startup.logoDataUrl && startup.logoDataUrl.trim() ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={startup.logoDataUrl} alt="" className="h-full w-full object-cover" />
+                  <img src={startup.logoDataUrl ?? undefined} alt="" className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-lg font-black uppercase tracking-[0.18em] text-white">
                     {startup.logoMonogram}
