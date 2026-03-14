@@ -14,5 +14,5 @@ export function StackUserMenuClient() {
     return null;
   }
 
-  return <UserButton showUserInfo />;
+  return <UserButton showUserInfo={false} />;
 }
