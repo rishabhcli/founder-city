@@ -18,9 +18,11 @@ const envSchema = z.object({
     .transform((value) => value || "http://localhost:3000"),
   openAiApiKey: StringEnv,
   openAiModel: z.string().trim().default("gpt-5.2"),
+  geminiApiKey: StringEnv,
   stackProjectId: StringEnv,
   stackPublishableClientKey: StringEnv,
   stackSecretServerKey: StringEnv,
+  mapboxAccessToken: StringEnv,
   supabaseUrl: StringEnv,
   supabaseAnonKey: StringEnv,
   supabaseServiceRoleKey: StringEnv,
@@ -48,9 +50,11 @@ const parsedEnv = envSchema.safeParse({
   appUrl: process.env.NEXT_PUBLIC_APP_URL,
   openAiApiKey: process.env.OPENAI_API_KEY,
   openAiModel: process.env.OPENAI_MODEL,
+  geminiApiKey: process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY,
   stackProjectId: process.env.NEXT_PUBLIC_STACK_PROJECT_ID,
   stackPublishableClientKey: process.env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY,
   stackSecretServerKey: process.env.STACK_SECRET_SERVER_KEY,
+  mapboxAccessToken: process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN,
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
   supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -80,6 +84,7 @@ const env = {
   appUrl: parsedEnv.success ? parsedEnv.data.appUrl : "http://localhost:3000",
   openAiApiKey: parsedEnv.success ? parsedEnv.data.openAiApiKey : undefined,
   openAiModel: parsedEnv.success ? parsedEnv.data.openAiModel : "gpt-5.2",
+  geminiApiKey: parsedEnv.success ? parsedEnv.data.geminiApiKey : undefined,
   stackProjectId: parsedEnv.success ? parsedEnv.data.stackProjectId : undefined,
   stackPublishableClientKey: parsedEnv.success
     ? parsedEnv.data.stackPublishableClientKey
@@ -87,6 +92,7 @@ const env = {
   stackSecretServerKey: parsedEnv.success
     ? parsedEnv.data.stackSecretServerKey
     : undefined,
+  mapboxAccessToken: parsedEnv.success ? parsedEnv.data.mapboxAccessToken : undefined,
   supabaseUrl: parsedEnv.success ? parsedEnv.data.supabaseUrl : undefined,
   supabaseAnonKey: parsedEnv.success ? parsedEnv.data.supabaseAnonKey : undefined,
   supabaseServiceRoleKey: parsedEnv.success ? parsedEnv.data.supabaseServiceRoleKey : undefined,
@@ -108,6 +114,14 @@ export function isSupabaseConfigured() {
 
 export function isOpenAiConfigured() {
   return Boolean(env.openAiApiKey);
+}
+
+export function isGeminiConfigured() {
+  return Boolean(env.geminiApiKey);
+}
+
+export function isMapboxConfigured() {
+  return Boolean(env.mapboxAccessToken);
 }
 
 export function isDemoMode() {

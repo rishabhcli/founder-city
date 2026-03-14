@@ -1,9 +1,10 @@
 "use client";
 
-import { isStackConfigured } from "@/lib/env";
-
 export function StackFallbackPanel() {
-  const configured = isStackConfigured();
+  const configured = Boolean(
+    process.env.NEXT_PUBLIC_STACK_PROJECT_ID &&
+      process.env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY,
+  );
 
   if (!configured) {
     return (
@@ -26,4 +27,3 @@ export function StackFallbackPanel() {
     </div>
   );
 }
-

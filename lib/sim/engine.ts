@@ -25,6 +25,7 @@ import {
   findShortestPath,
   inferCompanyType,
 } from "./graph";
+import { advancePlayerStartups, buildPlayerStartupOutcomes } from "./player-startups";
 import { createSeededRandom, randomId, shuffle } from "./random";
 import { deriveScore } from "./scoring";
 
@@ -248,7 +249,6 @@ function founderPresenceByDistrict(founders: FounderAgentState[]) {
       "mission-bay": 0,
       "north-beach": 0,
       "sunset-richmond": 0,
-      berkeley: 0,
     },
   );
 }
@@ -256,16 +256,34 @@ function founderPresenceByDistrict(founders: FounderAgentState[]) {
 function driftDistricts(
   districts: Record<DistrictId, DistrictState>,
   founders: FounderAgentState[],
+  playerStartups: CityState["playerStartups"],
   deltaMs: number,
 ) {
   const founderPresence = founderPresenceByDistrict(founders);
+  const playerPresence = playerStartups.reduce<Record<DistrictId, number>>(
+    (accumulator, startup) => {
+      accumulator[startup.districtId] +=
+        startup.status === "dead" ? 0 : startup.status === "breakout" ? 2.5 : 1.25;
+      return accumulator;
+    },
+    {
+      soma: 0,
+      fidi: 0,
+      mission: 0,
+      hayes: 0,
+      dogpatch: 0,
+      "mission-bay": 0,
+      "north-beach": 0,
+      "sunset-richmond": 0,
+    },
+  );
   const deltaScale = deltaMs / 1000;
 
   for (const [districtId, district] of Object.entries(districts) as Array<
     [DistrictId, DistrictState]
   >) {
     const base = DISTRICT_BY_ID[districtId];
-    const presence = founderPresence[districtId];
+    const presence = founderPresence[districtId] + playerPresence[districtId];
 
     district.stats.capital = clamp(
       district.stats.capital + (base.stats.capital - district.stats.capital) * 0.05 * deltaScale,
@@ -602,6 +620,19 @@ function maybeRollAgentWindow(state: CityState) {
 }
 
 function liveHeadline(state: CityState) {
+  const standoutPlayerStartup = state.playerStartups.find(
+    (startup) =>
+      startup.controlMode === "player" &&
+      (startup.status === "breakout" || startup.status === "distressed"),
+  );
+  if (standoutPlayerStartup?.status === "breakout") {
+    return `${standoutPlayerStartup.name} is now one of the tallest towers in ${state.districts[standoutPlayerStartup.districtId].label}.`;
+  }
+
+  if (standoutPlayerStartup?.status === "distressed") {
+    return `${standoutPlayerStartup.name} is wobbling in ${state.districts[standoutPlayerStartup.districtId].label}.`;
+  }
+
   const latestFounderHeadline = state.founders
     .map((founder) => founderHeadline(founder))
     .find(Boolean);
@@ -641,7 +672,8 @@ function tickState(state: CityState, deltaMs: number) {
   state.founders = state.founders.map((founder) =>
     stepFounder(founder, state.districts, state.elapsedMs, deltaMs),
   );
-  state.districts = driftDistricts(state.districts, state.founders, deltaMs);
+  advancePlayerStartups(state, state.elapsedMs, deltaMs);
+  state.districts = driftDistricts(state.districts, state.founders, state.playerStartups, deltaMs);
 
   maybeOpenVote(state);
   maybeTriggerEvent(state);
@@ -802,6 +834,7 @@ export function createRunSummary(state: CityState): RunSummary {
     cityPersonality: cityPersonality(state),
     districtOutcomes: standoutDistricts,
     founderOutcomes: state.founders.map(founderOutcome),
+    playerStartupOutcomes: buildPlayerStartupOutcomes(state),
     notableInterventions,
     score,
   };

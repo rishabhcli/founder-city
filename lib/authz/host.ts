@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
 import { isDemoMode } from "@/lib/env";
 import { getRoom, getRunByRunId } from "@/lib/data/store";
-import { getStackUser } from "@/lib/stack/server";
+import { getStackUserId as getCurrentStackUserId } from "@/lib/stack/server";
 import type { RoomRecord } from "@/lib/types/city";
-
-const StackUserSchema = z.object({
-  id: z.string().trim().min(1),
-});
 
 type HostAuthResult =
   | {
@@ -20,12 +15,6 @@ type HostAuthResult =
       ok: false;
       response: NextResponse;
     };
-
-async function getStackUserId() {
-  const user = await getStackUser();
-  const parsed = StackUserSchema.safeParse(user);
-  return parsed.success ? parsed.data.id : null;
-}
 
 export async function assertHostForRoom(roomId: string): Promise<HostAuthResult> {
   const room = await getRoom(roomId);
@@ -40,7 +29,7 @@ export async function assertHostForRoom(roomId: string): Promise<HostAuthResult>
     return { ok: true, room, userId: "demo-host" };
   }
 
-  const userId = await getStackUserId();
+  const userId = await getCurrentStackUserId();
   if (!userId) {
     return {
       ok: false,

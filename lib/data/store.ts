@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join as joinPath } from "node:path";
 
 import { isSupabaseConfigured } from "@/lib/env";
@@ -115,6 +115,8 @@ const memoryState: {
 
 const FALLBACK_DIR = joinPath(process.cwd(), ".founder-city-state");
 const FALLBACK_FILE = joinPath(FALLBACK_DIR, "store.json");
+const FALLBACK_TMP_FILE = joinPath(FALLBACK_DIR, "store.json.tmp");
+const FALLBACK_CORRUPT_PREFIX = joinPath(FALLBACK_DIR, "store.corrupt");
 
 type LocalStoreDump = {
   rooms: RoomRecord[];
@@ -126,6 +128,9 @@ type LocalStoreDump = {
   runVotes: Array<{ runId: string; votes: Array<{ voterKey: string; optionId: string }> }>;
 };
 
+let fallbackWriteChain: Promise<void> = Promise.resolve();
+let fallbackHydrationChain: Promise<void> | null = null;
+let lastHydratedPayload: string | null = null;
 
 function normalizeInvite(inviteCode: string) {
   return inviteCode.trim().toUpperCase();
@@ -156,52 +161,80 @@ function toSerializableState(): LocalStoreDump {
 }
 
 async function persistFallbackStore() {
-  await mkdir(FALLBACK_DIR, { recursive: true });
   const payload = JSON.stringify(toSerializableState(), null, 2);
-  await writeFile(FALLBACK_FILE, payload, "utf8");
+
+  fallbackWriteChain = fallbackWriteChain.then(async () => {
+    await mkdir(FALLBACK_DIR, { recursive: true });
+    await writeFile(FALLBACK_TMP_FILE, payload, "utf8");
+    await rename(FALLBACK_TMP_FILE, FALLBACK_FILE);
+    lastHydratedPayload = payload;
+  });
+
+  await fallbackWriteChain;
 }
 
 async function ensureFallbackStoreHydrated() {
-  try {
-    const raw = await readFile(FALLBACK_FILE, "utf8");
-    const parsed = JSON.parse(raw) as LocalStoreDump;
-    memoryState.rooms = new Map(parsed.rooms.map((room) => [room.id, room]));
-    memoryState.runs = new Map(parsed.runs.map((run) => [run.runId, run]));
-    memoryState.activeRunByRoom = new Map(
-      parsed.activeRunByRoom.map(({ roomId, runId }) => [roomId, runId]),
-    );
-    memoryState.roomByInvite = new Map(
-      parsed.roomByInvite.map(({ inviteCode, roomId }) => [
-        normalizeInvite(inviteCode),
-        roomId,
-      ]),
-    );
-    memoryState.runRecords = new Map(parsed.runRecords.map((record) => [record.id, record]));
-    memoryState.checkpoints = new Map(
-      parsed.checkpoints.reduce(
-        (acc: Array<[string, CheckpointRecord[]]>, checkpoint) => {
-          const runBuckets = acc.find(([runId]) => runId === checkpoint.runId);
-          if (runBuckets) {
-            runBuckets[1].push(checkpoint);
-          } else {
-            acc.push([checkpoint.runId, [checkpoint]]);
-          }
-          return acc;
-        },
-        [],
-      ),
-    );
-    memoryState.runVotes = new Map(
-      parsed.runVotes.map(({ runId, votes }) => [
-        runId,
-        new Map(votes.map((vote) => [vote.voterKey, vote.optionId])),
-      ]),
-    );
-  } catch (error) {
-    if ((error as { code?: string })?.code !== "ENOENT") {
-      console.warn("[founder-city] Failed to load fallback store file", error);
-    }
+  await fallbackWriteChain;
+
+  if (!fallbackHydrationChain) {
+    fallbackHydrationChain = (async () => {
+      try {
+        const raw = await readFile(FALLBACK_FILE, "utf8");
+        if (raw === lastHydratedPayload) {
+          return;
+        }
+
+        const parsed = JSON.parse(raw) as LocalStoreDump;
+        memoryState.rooms = new Map(parsed.rooms.map((room) => [room.id, room]));
+        memoryState.runs = new Map(parsed.runs.map((run) => [run.runId, run]));
+        memoryState.activeRunByRoom = new Map(
+          parsed.activeRunByRoom.map(({ roomId, runId }) => [roomId, runId]),
+        );
+        memoryState.roomByInvite = new Map(
+          parsed.roomByInvite.map(({ inviteCode, roomId }) => [
+            normalizeInvite(inviteCode),
+            roomId,
+          ]),
+        );
+        memoryState.runRecords = new Map(parsed.runRecords.map((record) => [record.id, record]));
+        memoryState.checkpoints = new Map(
+          parsed.checkpoints.reduce(
+            (acc: Array<[string, CheckpointRecord[]]>, checkpoint) => {
+              const runBuckets = acc.find(([runId]) => runId === checkpoint.runId);
+              if (runBuckets) {
+                runBuckets[1].push(checkpoint);
+              } else {
+                acc.push([checkpoint.runId, [checkpoint]]);
+              }
+              return acc;
+            },
+            [],
+          ),
+        );
+        memoryState.runVotes = new Map(
+          parsed.runVotes.map(({ runId, votes }) => [
+            runId,
+            new Map(votes.map((vote) => [vote.voterKey, vote.optionId])),
+          ]),
+        );
+        lastHydratedPayload = raw;
+      } catch (error) {
+        if ((error as { code?: string })?.code !== "ENOENT") {
+          console.warn("[founder-city] Failed to load fallback store file", error);
+          try {
+            await mkdir(FALLBACK_DIR, { recursive: true });
+            const corruptPath = `${FALLBACK_CORRUPT_PREFIX}.${Date.now()}.json`;
+            await rename(FALLBACK_FILE, corruptPath);
+          } catch {}
+          await persistFallbackStore();
+        }
+      }
+    })().finally(() => {
+      fallbackHydrationChain = null;
+    });
   }
+
+  await fallbackHydrationChain;
 }
 
 async function withPersistedStore<T>(operation: () => Promise<T>) {

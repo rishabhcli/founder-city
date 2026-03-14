@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CityState } from "@/lib/types/city";
+import { DISTRICT_IDS } from "@/lib/types/city";
 
 const RunIdOrRoomId = z
   .object({
@@ -89,6 +90,26 @@ export const CityManagerTickRequestSchema = z.object({
 
 export const PulseEventRequestSchema = z.object({
   city: CityStateLikeSchema,
+});
+
+export const CreatePlayerStartupRequestSchema = z.object({
+  roomId: z.string().trim().min(8).max(64),
+  name: z.string().trim().min(2).max(40),
+  description: z.string().trim().min(12).max(180),
+  districtId: z.enum(DISTRICT_IDS),
+  viewerKey: z.string().trim().min(4).max(64).optional(),
+});
+
+export const GenerateStartupNameRequestSchema = z.object({
+  districtId: z.enum(DISTRICT_IDS),
+  description: z.string().trim().min(8).max(180),
+});
+
+export const SubmitPlayerChoiceRequestSchema = z.object({
+  roomId: z.string().trim().min(8).max(64),
+  choiceRoundId: z.string().trim().min(4).max(64),
+  optionId: z.string().trim().min(4).max(64),
+  viewerKey: z.string().trim().min(4).max(64).optional(),
 });
 
 export type CityStateEnvelope = CityState;

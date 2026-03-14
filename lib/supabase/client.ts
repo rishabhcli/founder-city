@@ -1,19 +1,20 @@
 "use client";
 
 import { createClient } from "@supabase/supabase-js";
-import { env, isSupabaseConfigured } from "@/lib/env";
 
 let supabaseClient: ReturnType<typeof createClient> | null = null;
 
 export function getSupabaseBrowserClient() {
-  if (!isSupabaseConfigured()) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) {
     return null;
   }
 
   if (!supabaseClient) {
-    supabaseClient = createClient(env.supabaseUrl!, env.supabaseAnonKey!);
+    supabaseClient = createClient(url, anonKey);
   }
 
   return supabaseClient;
 }
-

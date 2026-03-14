@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { CitySimulationClient } from "@/components/city/CitySimulationClient";
+import { StackUserMenu } from "@/components/auth/StackUserMenu";
 import { isDemoMode } from "@/lib/env";
 import { getStackUser } from "@/lib/stack/server";
 import { redirect } from "next/navigation";
@@ -24,7 +26,12 @@ export default async function CityRoomPage(props: CityRoomPageProps) {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl px-4 py-6 md:px-8">
+    <main className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col gap-4 px-4 py-6 md:px-8">
+      <div className="flex justify-end">
+        <Suspense fallback={null}>
+          <StackUserMenu />
+        </Suspense>
+      </div>
       <CitySimulationClient roomId={roomId} host={host === "1"} />
     </main>
   );

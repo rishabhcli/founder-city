@@ -72,7 +72,7 @@ const EVENT_BLUEPRINTS: readonly EventBlueprint[] = [
       capital: 8,
       rentPressure: 11,
     },
-    defaultDistricts: ["soma", "berkeley"],
+    defaultDistricts: ["soma", "dogpatch"],
   },
   {
     title: "Rent Shock",

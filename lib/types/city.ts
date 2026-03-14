@@ -7,7 +7,6 @@ export const DISTRICT_IDS = [
   "mission-bay",
   "north-beach",
   "sunset-richmond",
-  "berkeley",
 ] as const;
 
 export const RESOURCE_KEYS = [
@@ -53,12 +52,47 @@ export const FOUNDER_STATUSES = [
   "breakout",
 ] as const;
 
+export const PLAYER_STARTUP_STATUSES = [
+  "launching",
+  "growing",
+  "steady",
+  "distressed",
+  "dead",
+  "breakout",
+] as const;
+
+export const PLAYER_STRATEGY_FOCI = [
+  "product",
+  "growth",
+  "sales",
+  "talent",
+  "community",
+  "compute",
+] as const;
+
+export const PLAYER_STARTUP_THEMES = [
+  "ai-infra",
+  "robotics",
+  "biotech",
+  "consumer",
+  "fintech",
+  "commerce",
+  "design",
+  "climate",
+] as const;
+
+export const PLAYER_STARTUP_CONTROL_MODES = ["player", "ambient"] as const;
+
 export type DistrictId = (typeof DISTRICT_IDS)[number];
 export type ResourceKey = (typeof RESOURCE_KEYS)[number];
 export type FounderNeed = (typeof FOUNDER_NEEDS)[number];
 export type DepartmentId = (typeof DEPARTMENT_IDS)[number];
 export type InterventionType = (typeof INTERVENTION_TYPES)[number];
 export type FounderStatus = (typeof FOUNDER_STATUSES)[number];
+export type PlayerStartupStatus = (typeof PLAYER_STARTUP_STATUSES)[number];
+export type PlayerStrategyFocus = (typeof PLAYER_STRATEGY_FOCI)[number];
+export type PlayerStartupTheme = (typeof PLAYER_STARTUP_THEMES)[number];
+export type PlayerStartupControlMode = (typeof PLAYER_STARTUP_CONTROL_MODES)[number];
 
 export type RecommendationType =
   | "watchlist"
@@ -75,6 +109,19 @@ export interface Point {
   y: number;
 }
 
+export interface GeoPoint {
+  lng: number;
+  lat: number;
+}
+
+export interface MapCameraState {
+  longitude: number;
+  latitude: number;
+  zoom: number;
+  pitch: number;
+  bearing: number;
+}
+
 export type ResourceVector = Record<ResourceKey, number>;
 export type FounderResourceProgress = Record<FounderNeed, number>;
 
@@ -83,6 +130,7 @@ export interface DistrictState {
   label: string;
   color: string;
   position: Point;
+  geo: GeoPoint;
   tags: string[];
   halo: string;
   stats: ResourceVector;
@@ -176,6 +224,74 @@ export interface EventCard {
   triggeredAt: number;
 }
 
+export interface StartupParcelState {
+  id: string;
+  districtId: DistrictId;
+  label: string;
+  center: GeoPoint;
+  footprint: GeoPoint[];
+  lane: number;
+  kind: "district" | "player";
+}
+
+export interface PlayerChoiceEffect {
+  focus: PlayerStrategyFocus;
+  tractionDelta: number;
+  cashDelta: number;
+  growthDelta: number;
+  hypeDelta: number;
+  resilienceDelta: number;
+  targetDistrict?: DistrictId;
+}
+
+export interface PlayerChoiceOption {
+  id: string;
+  label: string;
+  description: string;
+  outlook: "surge" | "stabilize" | "risk";
+  effect: PlayerChoiceEffect;
+}
+
+export interface PlayerChoiceRound {
+  id: string;
+  prompt: string;
+  opensAt: number;
+  closesAt: number;
+  options: PlayerChoiceOption[];
+  selectedOptionId: string | null;
+  resolvedOptionId: string | null;
+}
+
+export interface PlayerStartupState {
+  id: string;
+  ownerUserId: string;
+  ownerLabel: string;
+  controlMode: PlayerStartupControlMode;
+  name: string;
+  description: string;
+  theme: PlayerStartupTheme;
+  brandColor: string;
+  logoMonogram: string;
+  logoDataUrl: string | null;
+  districtId: DistrictId;
+  parcelId: string;
+  buildingHeight: number;
+  valuation: number;
+  traction: number;
+  cash: number;
+  growth: number;
+  hype: number;
+  resilience: number;
+  status: PlayerStartupStatus;
+  strategyFocus: PlayerStrategyFocus;
+  aiMood: string;
+  aiAction: string;
+  foundedAt: number;
+  nextChoiceAt: number;
+  activeChoiceRound: PlayerChoiceRound | null;
+  resolvedChoices: PlayerChoiceRound[];
+}
+
 export interface ScoreState {
   startupSurvival: number;
   commuteHealth: number;
@@ -192,6 +308,7 @@ export interface SimDelta {
   score: ScoreState;
   founders: FounderAgentState[];
   districts: Record<DistrictId, DistrictState>;
+  playerStartups: PlayerStartupState[];
   activeVoteRound: VoteRound | null;
   eventLog: EventCard[];
 }
@@ -202,6 +319,7 @@ export interface RunSummary {
   cityPersonality: string;
   districtOutcomes: string[];
   founderOutcomes: string[];
+  playerStartupOutcomes: string[];
   notableInterventions: string[];
   score: ScoreState;
 }
@@ -221,9 +339,12 @@ export interface CityState {
   nextVoteAt: number;
   nextAgentTickAt: number;
   nextEventAt: number;
+  mapCamera: MapCameraState;
   districts: Record<DistrictId, DistrictState>;
   edges: CityEdge[];
+  startupParcels: StartupParcelState[];
   founders: FounderAgentState[];
+  playerStartups: PlayerStartupState[];
   managers: ManagerAgentState[];
   score: ScoreState;
   interventions: Intervention[];

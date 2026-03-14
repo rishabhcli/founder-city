@@ -1,7 +1,5 @@
 "use client";
 
-import { env, isStackConfigured } from "@/lib/env";
-
 type GenericStackClient = {
   handler?: (...args: unknown[]) => unknown;
   SignIn?: unknown;
@@ -20,7 +18,10 @@ type StackClientConstructor = new (options: {
 let client: GenericStackClient | null = null;
 
 export async function getStackClientApp(): Promise<GenericStackClient | null> {
-  if (!isStackConfigured()) {
+  const projectId = process.env.NEXT_PUBLIC_STACK_PROJECT_ID;
+  const publishableClientKey = process.env.NEXT_PUBLIC_STACK_PUBLISHABLE_CLIENT_KEY;
+
+  if (!projectId || !publishableClientKey) {
     return null;
   }
 
@@ -37,8 +38,8 @@ export async function getStackClientApp(): Promise<GenericStackClient | null> {
       return null;
     }
     client = new StackClientApp({
-      projectId: env.stackProjectId,
-      publishableClientKey: env.stackPublishableClientKey,
+      projectId,
+      publishableClientKey,
       tokenStore: "cookie",
       redirectMethod: "nextjs",
     });

@@ -1,4 +1,10 @@
-import type { CityState, FounderAgentState, ResourceKey, ScoreState } from "@/lib/types/city";
+import type {
+  CityState,
+  FounderAgentState,
+  PlayerStartupState,
+  ResourceKey,
+  ScoreState,
+} from "@/lib/types/city";
 import { average, clamp } from "@/lib/utils";
 
 const BALANCE_KEYS: readonly ResourceKey[] = [
@@ -32,7 +38,25 @@ function averageFounderProgress(founder: FounderAgentState) {
   return average(founder.needs.map((need) => founder.resourceProgress[need]));
 }
 
-function deriveStartupSurvival(state: Pick<CityState, "founders">) {
+function startupStatusWeight(startup: PlayerStartupState) {
+  switch (startup.status) {
+    case "breakout":
+      return 100;
+    case "growing":
+      return 82;
+    case "steady":
+      return 70;
+    case "distressed":
+      return 34;
+    case "dead":
+      return 0;
+    case "launching":
+    default:
+      return 56;
+  }
+}
+
+function deriveStartupSurvival(state: Pick<CityState, "founders" | "playerStartups">) {
   const founderHealth = state.founders.map((founder) =>
     clamp(
       founderStatusWeight(founder) * 0.65 +
@@ -43,7 +67,18 @@ function deriveStartupSurvival(state: Pick<CityState, "founders">) {
     ),
   );
 
-  return clamp(average(founderHealth), 0, 100);
+  const playerStartupHealth = state.playerStartups.map((startup) =>
+    clamp(
+      startupStatusWeight(startup) * 0.6 +
+        startup.cash * 0.18 +
+        startup.traction * 0.12 +
+        startup.resilience * 0.1,
+      0,
+      100,
+    ),
+  );
+
+  return clamp(average([...founderHealth, ...playerStartupHealth]), 0, 100);
 }
 
 function deriveCommuteHealth(state: Pick<CityState, "districts">) {
@@ -100,7 +135,7 @@ function deriveNeighborhoodBalance(state: Pick<CityState, "districts">) {
   return clamp(100 - average(deviations) * 1.65, 0, 100);
 }
 
-export function deriveScore(state: Pick<CityState, "founders" | "districts">): ScoreState {
+export function deriveScore(state: Pick<CityState, "founders" | "playerStartups" | "districts">): ScoreState {
   return {
     startupSurvival: deriveStartupSurvival(state),
     commuteHealth: deriveCommuteHealth(state),

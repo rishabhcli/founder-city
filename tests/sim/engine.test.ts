@@ -6,11 +6,11 @@ import { deriveScore } from "@/lib/sim/scoring";
 
 describe("Founder City simulation engine", () => {
   it("builds deterministic shortest paths across the district graph", () => {
-    expect(findShortestPath("dogpatch", "berkeley")).toEqual([
+    expect(findShortestPath("dogpatch", "north-beach")).toEqual([
       "dogpatch",
       "soma",
       "fidi",
-      "berkeley",
+      "north-beach",
     ]);
   });
 

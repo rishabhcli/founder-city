@@ -59,3 +59,13 @@ export async function getStackUser(): Promise<unknown | null> {
     return null;
   }
 }
+
+export async function getStackUserId(): Promise<string | null> {
+  const user = await getStackUser();
+  if (!user || typeof user !== "object") {
+    return null;
+  }
+
+  const id = "id" in user ? user.id : null;
+  return typeof id === "string" && id.trim().length > 0 ? id : null;
+}

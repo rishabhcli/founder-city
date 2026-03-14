@@ -6,11 +6,13 @@ import type {
   FounderAgentState,
   FounderNeed,
   FounderResourceProgress,
+  MapCameraState,
   ManagerAgentState,
   ResourceVector,
 } from "@/lib/types/city";
 
 import { createEventDeck } from "./events";
+import { createStartupParcels, seedAmbientPlayerStartups } from "./player-startups";
 import { createSeededRandom } from "./random";
 import { deriveScore } from "./scoring";
 
@@ -20,6 +22,13 @@ export const VOTE_INTERVAL_MS = 20_000;
 export const VOTE_WINDOW_MS = 10_000;
 export const AGENT_TICK_INTERVAL_MS = 12_000;
 export const EVENT_INTERVAL_MS = 18_000;
+export const DEFAULT_MAP_CAMERA: MapCameraState = {
+  longitude: -122.4158,
+  latitude: 37.7783,
+  zoom: 12.55,
+  pitch: 72,
+  bearing: -28,
+};
 
 function resourceVector(values: ResourceVector): ResourceVector {
   return { ...values };
@@ -44,6 +53,7 @@ export const DISTRICTS: readonly DistrictState[] = [
     label: "SoMa",
     color: "#00e2ff",
     position: { x: 430, y: 290 },
+    geo: { lng: -122.4069, lat: 37.7786 },
     tags: ["compute", "ai", "infra"],
     halo: "rgba(0, 226, 255, 0.32)",
     stats: resourceVector({
@@ -62,6 +72,7 @@ export const DISTRICTS: readonly DistrictState[] = [
     label: "FiDi",
     color: "#ffd166",
     position: { x: 555, y: 230 },
+    geo: { lng: -122.4006, lat: 37.7948 },
     tags: ["capital", "scale", "finance"],
     halo: "rgba(255, 209, 102, 0.28)",
     stats: resourceVector({
@@ -80,6 +91,7 @@ export const DISTRICTS: readonly DistrictState[] = [
     label: "Mission",
     color: "#ff6f61",
     position: { x: 320, y: 395 },
+    geo: { lng: -122.4194, lat: 37.7598 },
     tags: ["culture", "consumer", "nightlife"],
     halo: "rgba(255, 111, 97, 0.28)",
     stats: resourceVector({
@@ -98,6 +110,7 @@ export const DISTRICTS: readonly DistrictState[] = [
     label: "Hayes Valley",
     color: "#f4d35e",
     position: { x: 315, y: 265 },
+    geo: { lng: -122.4254, lat: 37.7764 },
     tags: ["design", "retail", "taste"],
     halo: "rgba(244, 211, 94, 0.22)",
     stats: resourceVector({
@@ -116,6 +129,7 @@ export const DISTRICTS: readonly DistrictState[] = [
     label: "Dogpatch",
     color: "#ff9f1c",
     position: { x: 495, y: 435 },
+    geo: { lng: -122.3882, lat: 37.7596 },
     tags: ["prototyping", "robotics", "hardware"],
     halo: "rgba(255, 159, 28, 0.28)",
     stats: resourceVector({
@@ -134,6 +148,7 @@ export const DISTRICTS: readonly DistrictState[] = [
     label: "Mission Bay",
     color: "#7ae582",
     position: { x: 545, y: 375 },
+    geo: { lng: -122.3893, lat: 37.7712 },
     tags: ["biotech", "labs", "health"],
     halo: "rgba(122, 229, 130, 0.24)",
     stats: resourceVector({
@@ -152,6 +167,7 @@ export const DISTRICTS: readonly DistrictState[] = [
     label: "North Beach",
     color: "#c77dff",
     position: { x: 535, y: 120 },
+    geo: { lng: -122.4101, lat: 37.8063 },
     tags: ["nightlife", "community", "consumer"],
     halo: "rgba(199, 125, 255, 0.24)",
     stats: resourceVector({
@@ -170,6 +186,7 @@ export const DISTRICTS: readonly DistrictState[] = [
     label: "Sunset / Richmond",
     color: "#8ecae6",
     position: { x: 120, y: 320 },
+    geo: { lng: -122.4846, lat: 37.7632 },
     tags: ["retention", "housing", "stability"],
     halo: "rgba(142, 202, 230, 0.22)",
     stats: resourceVector({
@@ -181,24 +198,6 @@ export const DISTRICTS: readonly DistrictState[] = [
       localBusiness: 66,
       congestion: 28,
       rentPressure: 36,
-    }),
-  },
-  {
-    id: "berkeley",
-    label: "Berkeley",
-    color: "#9ef01a",
-    position: { x: 700, y: 145 },
-    tags: ["research", "talent", "deeptech"],
-    halo: "rgba(158, 240, 26, 0.22)",
-    stats: resourceVector({
-      capital: 35,
-      talent: 91,
-      compute: 64,
-      permits: 58,
-      vibe: 61,
-      localBusiness: 52,
-      congestion: 22,
-      rentPressure: 33,
     }),
   },
 ] as const;
@@ -273,20 +272,6 @@ export const EDGES: readonly CityEdge[] = [
     to: "north-beach",
     baseDistance: 0.9,
     lineColor: "#ffd166",
-  },
-  {
-    id: "edge-fidi-berkeley",
-    from: "fidi",
-    to: "berkeley",
-    baseDistance: 1.8,
-    lineColor: "#9ef01a",
-  },
-  {
-    id: "edge-northbeach-berkeley",
-    from: "north-beach",
-    to: "berkeley",
-    baseDistance: 1.7,
-    lineColor: "#9ef01a",
   },
   {
     id: "edge-mission-dogpatch",
@@ -522,6 +507,7 @@ export function cloneDistricts() {
       {
         ...district,
         position: { ...district.position },
+        geo: { ...district.geo },
         tags: [...district.tags],
         stats: { ...district.stats },
       },
@@ -657,10 +643,6 @@ export function inferCompanyType(founder: FounderAgentState) {
     return "Design-led commerce studio";
   }
 
-  if (influenceSet.has("berkeley")) {
-    return "Deeptech research spinout";
-  }
-
   if (influenceSet.has("sunset-richmond")) {
     return "Neighborhood resilience SaaS";
   }
@@ -721,9 +703,12 @@ export function createInitialCityState(
     nextVoteAt: VOTE_INTERVAL_MS,
     nextAgentTickAt: AGENT_TICK_INTERVAL_MS,
     nextEventAt: EVENT_INTERVAL_MS,
+    mapCamera: { ...DEFAULT_MAP_CAMERA },
     districts,
     edges: EDGES.map((edge) => ({ ...edge })),
+    startupParcels: createStartupParcels(districts),
     founders,
+    playerStartups: [],
     managers,
     score: {
       startupSurvival: 0,
@@ -739,6 +724,8 @@ export function createInitialCityState(
     eventLog: [],
     summary: null,
   };
+
+  draftState.playerStartups = seedAmbientPlayerStartups(draftState);
 
   draftState.score = deriveScore(draftState);
 
