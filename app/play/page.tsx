@@ -3,7 +3,6 @@ import { PlayClient } from "@/components/play/PlayClient";
 import { StackUserMenu } from "@/components/auth/StackUserMenu";
 import { redirect } from "next/navigation";
 import { getStackUser } from "@/lib/stack/server";
-import { isDemoMode } from "@/lib/env";
 
 export const metadata = {
   title: "Founder City Play",
@@ -11,11 +10,9 @@ export const metadata = {
 };
 
 export default async function PlayPage() {
-  if (!isDemoMode()) {
-    const user = await getStackUser();
-    if (!user) {
-      redirect("/sign-in");
-    }
+  const user = await getStackUser();
+  if (!user) {
+    redirect("/sign-in");
   }
 
   return (

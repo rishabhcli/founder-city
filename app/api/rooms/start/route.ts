@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRoom, startRun } from "@/lib/data/store";
 import { parseRequestBody } from "@/lib/api/validation";
 import { StartRunRequestSchema } from "@/lib/api/schemas";
-import { isDemoMode } from "@/lib/env";
 import { assertHostForRoom } from "@/lib/authz/host";
+import { getStackUserId } from "@/lib/stack/server";
 
 export async function POST(request: NextRequest) {
   const parsed = await parseRequestBody(request, StartRunRequestSchema);
@@ -17,11 +17,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Room not found" }, { status: 404 });
   }
 
-  if (!isDemoMode()) {
-    const hostAuth = await assertHostForRoom(room.id);
-    if (!hostAuth.ok) {
-      return hostAuth.response;
-    }
+  const requesterUserId = await getStackUserId();
+  if (!requesterUserId) {
+    return NextResponse.json({ error: "Authentication required to start a run." }, { status: 401 });
+  }
+
+  const hostAuth = await assertHostForRoom(room.id);
+  if (!hostAuth.ok) {
+    return hostAuth.response;
   }
 
   const run = await startRun(room.id);

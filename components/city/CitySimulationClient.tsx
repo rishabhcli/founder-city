@@ -313,6 +313,13 @@ export function CitySimulationClient({
       body: JSON.stringify({ roomId }),
     });
     if (!response.ok) {
+      if (response.status === 401) {
+        setMessage("Sign in to start the game.");
+        if (typeof window !== "undefined") {
+          window.location.href = "/sign-in";
+        }
+        return;
+      }
       setMessage("Could not start run.");
       return;
     }

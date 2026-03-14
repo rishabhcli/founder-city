@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { CitySimulationClient } from "@/components/city/CitySimulationClient";
 import { StackUserMenu } from "@/components/auth/StackUserMenu";
-import { isDemoMode } from "@/lib/env";
 import { getStackUser } from "@/lib/stack/server";
 import { redirect } from "next/navigation";
 
@@ -18,7 +17,7 @@ export default async function CityRoomPage(props: CityRoomPageProps) {
   const { roomId } = await props.params;
   const { host } = await props.searchParams;
 
-  if (host === "1" && !isDemoMode()) {
+  if (host === "1") {
     const user = await getStackUser();
     if (!user) {
       redirect("/sign-in");
