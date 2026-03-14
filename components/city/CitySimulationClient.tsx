@@ -734,7 +734,7 @@ export function CitySimulationClient({
                         className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-slate-950/90 ring-1 ring-white/12"
                         style={{ background: `radial-gradient(circle at 30% 20%, ${startup.brandColor}, #020617 72%)` }}
                       >
-                        {startup.logoDataUrl ? (
+                        {startup.logoDataUrl && startup.logoDataUrl.trim() ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={startup.logoDataUrl} alt="" className="h-full w-full object-cover" />
                         ) : (

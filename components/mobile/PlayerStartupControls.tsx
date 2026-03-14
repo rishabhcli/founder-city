@@ -316,7 +316,7 @@ export function PlayerStartupControls({
                 className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-[26px] border border-white/10 bg-slate-950/90 shadow-[0_20px_48px_rgba(15,23,42,0.48)]"
                 style={{ background: `radial-gradient(circle at 30% 20%, ${previewBrandColor}, #020617 72%)` }}
               >
-                {previewLogoDataUrl ? (
+                {previewLogoDataUrl && previewLogoDataUrl.trim() ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={previewLogoDataUrl} alt="" className="h-full w-full object-cover" />
                 ) : (
@@ -350,7 +350,7 @@ export function PlayerStartupControls({
                 className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[26px] border border-white/10 bg-slate-950/90"
                 style={{ background: `radial-gradient(circle at 30% 20%, ${startup.brandColor}, #020617 72%)` }}
               >
-                {startup.logoDataUrl ? (
+                {startup.logoDataUrl && startup.logoDataUrl.trim() ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={startup.logoDataUrl} alt="" className="h-full w-full object-cover" />
                 ) : (

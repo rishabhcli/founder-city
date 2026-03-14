@@ -123,6 +123,8 @@ function StartupBadge({
   compact: boolean;
   elevated: boolean;
 }) {
+  const shouldRenderLogo = Boolean(logoDataUrl && logoDataUrl.trim().length > 0);
+
   return (
     <div
       className={cn(
@@ -142,7 +144,7 @@ function StartupBadge({
           className="flex h-full w-full items-center justify-center overflow-hidden rounded-full ring-1 ring-white/12"
           style={{ background: `radial-gradient(circle at 30% 20%, ${brandColor}, #020617 72%)` }}
         >
-          {logoDataUrl ? (
+          {shouldRenderLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoDataUrl} alt="" className="h-full w-full object-cover" />
           ) : (
