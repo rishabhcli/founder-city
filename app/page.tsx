@@ -8,6 +8,9 @@ export const metadata = {
 };
 
 export default function Home() {
+  const liveDemoRoomId = process.env.NEXT_PUBLIC_LIVE_DEMO_ROOM_ID?.trim();
+  const liveDemoHref = liveDemoRoomId ? `/city/${liveDemoRoomId}` : "/play";
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-8 md:px-8">
       <div className="flex items-center justify-between gap-3">
@@ -33,6 +36,13 @@ export default function Home() {
         </p>
 
         <div className="mt-8 flex flex-wrap gap-3">
+          <Link
+            href={liveDemoHref}
+            className="inline-flex rounded-full border border-emerald-300/60 bg-emerald-200/10 px-5 py-3 text-sm font-semibold text-emerald-100 hover:bg-emerald-300/20"
+            aria-label={liveDemoRoomId ? "Open live demo city room" : "Create or join a room for live demo"}
+          >
+            Live Demo
+          </Link>
           <Link
             href="/play"
             className="inline-flex rounded-full bg-amber-300 px-5 py-3 text-sm font-semibold text-slate-950"
